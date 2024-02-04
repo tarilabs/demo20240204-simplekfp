@@ -1,0 +1,117 @@
+# PIPELINE DEFINITION
+# Name: mm-pipeline
+components:
+  comp-component1:
+    executorLabel: exec-component1
+    inputDefinitions:
+      parameters:
+        text:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        output_gcs:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-component2:
+    executorLabel: exec-component2
+    inputDefinitions:
+      artifacts:
+        input_gcs:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-component1:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - component1
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.6.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef component1(text: str, output_gcs: Output[Dataset]):\n    with\
+          \ open(output_gcs.path, 'w') as f:\n        f.write(text)\n\n"
+        image: python:3.7
+    exec-component2:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - component2
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.6.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef component2(input_gcs: Input[Dataset]):\n    with open(input_gcs.path,\
+          \ 'r') as f:\n        lines = f.readlines()\n        print(lines)\n\n"
+        image: python:3.7
+pipelineInfo:
+  name: mm-pipeline
+root:
+  dag:
+    tasks:
+      component1:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-component1
+        inputs:
+          parameters:
+            text:
+              runtimeValue:
+                constant: hello world Matteo
+        taskInfo:
+          name: component1
+      component2:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-component2
+        dependentTasks:
+        - component1
+        inputs:
+          artifacts:
+            input_gcs:
+              taskOutputArtifact:
+                outputArtifactKey: output_gcs
+                producerTask: component1
+        taskInfo:
+          name: component2
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.6.0
